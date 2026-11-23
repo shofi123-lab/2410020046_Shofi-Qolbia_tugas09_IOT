@@ -1,0 +1,228 @@
+[
+    {
+        "id": "flow_api",
+        "type": "tab",
+        "label": "REST API IoT",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "mqtt_broker_config",
+        "type": "mqtt-broker",
+        "name": "Local Mosquitto",
+        "broker": "localhost",
+        "port": "1883",
+        "clientid": "node-red-backend",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4"
+    },
+    {
+        "id": "mqtt_sensor_in",
+        "type": "mqtt in",
+        "z": "flow_api",
+        "name": "Subscribe Sensor",
+        "topic": "iot/sensor",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "mqtt_broker_config",
+        "x": 150,
+        "y": 80,
+        "wires": [["store_sensor"]]
+    },
+    {
+        "id": "store_sensor",
+        "type": "function",
+        "z": "flow_api",
+        "name": "Simpan Data & Cek Threshold",
+        "func": "var data = msg.payload;\ndata.received = new Date().toISOString();\n\nvar threshold = flow.get('threshold') || 32.0;\ndata.threshold = threshold;\ndata.alert = data.suhu > threshold;\n\nflow.set('lastSensor', data);\n\nvar history = flow.get('history') || [];\nhistory.push(data);\nif (history.length > 50) history.shift();\nflow.set('history', history);\n\nreturn msg;",
+        "outputs": 1,
+        "x": 400,
+        "y": 80,
+        "wires": [["debug_sensor"]]
+    },
+    {
+        "id": "debug_sensor",
+        "type": "debug",
+        "z": "flow_api",
+        "name": "Log Sensor",
+        "active": true,
+        "complete": "payload",
+        "x": 650,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "http_get_suhu",
+        "type": "http in",
+        "z": "flow_api",
+        "name": "GET /api/suhu",
+        "url": "/api/suhu",
+        "method": "get",
+        "upload": false,
+        "x": 150,
+        "y": 160,
+        "wires": [["resp_suhu"]]
+    },
+    {
+        "id": "resp_suhu",
+        "type": "function",
+        "z": "flow_api",
+        "name": "Build Response Suhu",
+        "func": "msg.headers = {'Access-Control-Allow-Origin': '*'};\nif (msg.req.headers['x-api-key'] !== 'rahasia123') {\n    msg.statusCode = 401;\n    msg.payload = {status: 'error', message: 'API Key tidak valid'};\n    return msg;\n}\nvar data = flow.get('lastSensor') || {suhu: null, kelembaban: null, timestamp: null, threshold: 32.0, alert: false};\nmsg.payload = { status: 'success', data: data, server_time: new Date().toISOString() };\nreturn msg;",
+        "outputs": 1,
+        "x": 390,
+        "y": 160,
+        "wires": [["http_resp_suhu"]]
+    },
+    {
+        "id": "http_resp_suhu",
+        "type": "http response",
+        "z": "flow_api",
+        "name": "",
+        "x": 630,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "http_get_history",
+        "type": "http in",
+        "z": "flow_api",
+        "name": "GET /api/history",
+        "url": "/api/history",
+        "method": "get",
+        "upload": false,
+        "x": 160,
+        "y": 240,
+        "wires": [["resp_history"]]
+    },
+    {
+        "id": "resp_history",
+        "type": "function",
+        "z": "flow_api",
+        "name": "Build Response History",
+        "func": "msg.headers = {'Access-Control-Allow-Origin': '*'};\nif (msg.req.headers['x-api-key'] !== 'rahasia123') {\n    msg.statusCode = 401;\n    msg.payload = {status: 'error', message: 'API Key tidak valid'};\n    return msg;\n}\nvar history = flow.get('history') || [];\nmsg.payload = { status: 'success', count: history.length, data: history };\nreturn msg;",
+        "outputs": 1,
+        "x": 400,
+        "y": 240,
+        "wires": [["http_resp_history"]]
+    },
+    {
+        "id": "http_resp_history",
+        "type": "http response",
+        "z": "flow_api",
+        "name": "",
+        "x": 630,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "http_post_kontrol",
+        "type": "http in",
+        "z": "flow_api",
+        "name": "POST /api/kontrol",
+        "url": "/api/kontrol",
+        "method": "post",
+        "upload": false,
+        "x": 160,
+        "y": 320,
+        "wires": [["proc_kontrol"]]
+    },
+    {
+        "id": "proc_kontrol",
+        "type": "function",
+        "z": "flow_api",
+        "name": "Validasi & Publish",
+        "func": "msg.headers = {'Access-Control-Allow-Origin': '*'};\nif (msg.req.headers['x-api-key'] !== 'rahasia123') {\n    msg.statusCode = 401;\n    msg.payload = {status: 'error', message: 'API Key tidak valid'};\n    return [msg, null];\n}\nvar body = msg.payload;\nif (!body.device || !body.action) {\n    msg.statusCode = 400;\n    msg.payload = {status: 'error', message: 'device dan action wajib diisi'};\n    return [msg, null];\n}\nvar mqttMsg = {payload: body, topic: 'iot/kontrol'};\nnode.send([null, mqttMsg]);\nmsg.statusCode = 200;\nmsg.payload = { status: 'success', message: 'Perintah terkirim', sent: body };\nreturn [msg, null];",
+        "outputs": 2,
+        "x": 390,
+        "y": 320,
+        "wires": [["http_resp_kontrol"], ["mqtt_publish_kontrol"]]
+    },
+    {
+        "id": "http_resp_kontrol",
+        "type": "http response",
+        "z": "flow_api",
+        "name": "",
+        "x": 630,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "mqtt_publish_kontrol",
+        "type": "mqtt out",
+        "z": "flow_api",
+        "name": "Publish Kontrol",
+        "topic": "",
+        "qos": "0",
+        "retain": "false",
+        "broker": "mqtt_broker_config",
+        "x": 640,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "http_put_threshold",
+        "type": "http in",
+        "z": "flow_api",
+        "name": "PUT /api/threshold",
+        "url": "/api/threshold",
+        "method": "put",
+        "upload": false,
+        "x": 170,
+        "y": 420,
+        "wires": [["proc_threshold"]]
+    },
+    {
+        "id": "proc_threshold",
+        "type": "function",
+        "z": "flow_api",
+        "name": "Set Batas Suhu",
+        "func": "msg.headers = {'Access-Control-Allow-Origin': '*'};\nif (msg.req.headers['x-api-key'] !== 'rahasia123') {\n    msg.statusCode = 401;\n    msg.payload = {status: 'error', message: 'API Key tidak valid'};\n    return msg;\n}\nvar batas = parseFloat(msg.payload.threshold);\nif (isNaN(batas)) {\n    msg.statusCode = 400;\n    msg.payload = {status: 'error', message: 'Nilai threshold tidak valid'};\n    return msg;\n}\nflow.set('threshold', batas);\nmsg.statusCode = 200;\nmsg.payload = {status: 'success', threshold: batas, message: 'Batas suhu diubah ke ' + batas + '°C'};\nreturn msg;",
+        "outputs": 1,
+        "x": 390,
+        "y": 420,
+        "wires": [["http_resp_threshold"]]
+    },
+    {
+        "id": "http_resp_threshold",
+        "type": "http response",
+        "z": "flow_api",
+        "name": "",
+        "x": 630,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "http_cors",
+        "type": "http in",
+        "z": "flow_api",
+        "name": "OPTIONS CORS",
+        "url": "/api/*",
+        "method": "options",
+        "upload": false,
+        "x": 160,
+        "y": 500,
+        "wires": [["cors_resp"]]
+    },
+    {
+        "id": "cors_resp",
+        "type": "function",
+        "z": "flow_api",
+        "name": "CORS Headers",
+        "func": "msg.statusCode = 204;\nmsg.payload = '';\nmsg.headers = {\n    'Access-Control-Allow-Origin': '*',\n    'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',\n    'Access-Control-Allow-Headers': 'Content-Type, X-API-Key'\n};\nreturn msg;",
+        "outputs": 1,
+        "x": 380,
+        "y": 500,
+        "wires": [["cors_http_resp"]]
+    },
+    {
+        "id": "cors_http_resp",
+        "type": "http response",
+        "z": "flow_api",
+        "name": "",
+        "x": 610,
+        "y": 500,
+        "wires": []
+    }
+]
